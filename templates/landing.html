@@ -1,0 +1,423 @@
+{% extends "layout.html" %} {% block title %}Home - Expense Tracker{% endblock
+%} {% block content %}
+<style>
+  body {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+  }
+
+  .navbar {
+    background-color: rgba(0, 0, 0, 0.8) !important;
+  }
+
+  .hero {
+    min-height: 80vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: white;
+    padding: 40px 20px;
+  }
+
+  .hero h1 {
+    font-size: 3.5rem;
+    font-weight: bold;
+    margin-bottom: 20px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .hero p {
+    font-size: 1.3rem;
+    margin-bottom: 40px;
+    opacity: 0.9;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .cta-buttons {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn-large {
+    padding: 15px 40px;
+    font-size: 1.1rem;
+    border-radius: 50px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+  }
+
+  .btn-primary-light {
+    background: white;
+    color: #667eea;
+    border: 2px solid white;
+  }
+
+  .btn-primary-light:hover {
+    background: transparent;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+  }
+
+  .btn-secondary-light {
+    background: transparent;
+    color: white;
+    border: 2px solid white;
+  }
+
+  .btn-secondary-light:hover {
+    background: white;
+    color: #667eea;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+  }
+
+  .features {
+    background: white;
+    padding: 80px 20px;
+  }
+
+  .feature-card {
+    background: white;
+    border-radius: 15px;
+    padding: 30px;
+    margin-bottom: 30px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    transition:
+      transform 0.3s ease,
+      box-shadow 0.3s ease;
+  }
+
+  .feature-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  }
+
+  .feature-icon {
+    font-size: 3rem;
+    margin-bottom: 20px;
+  }
+
+  .feature-card h3 {
+    color: #667eea;
+    font-weight: bold;
+    margin-bottom: 15px;
+  }
+
+  .feature-card p {
+    color: #666;
+    line-height: 1.6;
+  }
+
+  .stats {
+    background: #f8f9fa;
+    padding: 60px 20px;
+  }
+
+  .stat-box {
+    text-align: center;
+    padding: 30px;
+  }
+
+  .stat-number {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #667eea;
+  }
+
+  .stat-label {
+    font-size: 1.1rem;
+    color: #666;
+    margin-top: 10px;
+  }
+
+  .testimonial {
+    background: white;
+    border-radius: 15px;
+    padding: 30px;
+    margin-bottom: 30px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    border-left: 5px solid #667eea;
+  }
+
+  .stars {
+    color: #ffc107;
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+  }
+
+  .testimonial p {
+    color: #333;
+    margin-bottom: 15px;
+    font-style: italic;
+  }
+
+  .testimonial-author {
+    font-weight: bold;
+    color: #667eea;
+  }
+
+  .footer-cta {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 60px 20px;
+    text-align: center;
+  }
+
+  .footer-cta h2 {
+    font-size: 2.5rem;
+    margin-bottom: 30px;
+  }
+</style>
+
+<!-- Hero Section -->
+<div class="hero">
+  <div>
+    <h1>Smart Expense Tracking</h1>
+    <p>
+      Take control of your finances with our simple yet powerful expense
+      tracker. Monitor your spending, set budgets, and achieve your financial
+      goals.
+    </p>
+
+    <div class="cta-buttons">
+      {% if session.get("user_id") %}
+      <a
+        href="{{ url_for('main.dashboard') }}"
+        class="btn btn-primary btn-large"
+      >
+        Go to Dashboard
+      </a>
+      {% else %}
+      <a
+        href="{{ url_for('auth.register') }}"
+        class="btn btn-primary-light btn-large"
+      >
+        Get Started Free
+      </a>
+      <a
+        href="{{ url_for('auth.login') }}"
+        class="btn btn-secondary-light btn-large"
+      >
+        Sign In
+      </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Features Section -->
+<section class="features">
+  <div class="container">
+    <h2
+      style="
+        text-align: center;
+        margin-bottom: 50px;
+        color: #333;
+        font-size: 2.5rem;
+      "
+    >
+      Why Choose Our Tracker?
+    </h2>
+
+    <div class="row">
+      <div class="col-md-4">
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Visual Reports</h3>
+          <p>
+            Beautiful charts and graphs to visualize your spending patterns.
+            Understand where your money goes with detailed reports.
+          </p>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="feature-card">
+          <div class="feature-icon">💸</div>
+          <h3>Budget Management</h3>
+          <p>
+            Set spending limits by category and get alerts when you're
+            approaching your budget. Stay in control of your finances.
+          </p>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="feature-card">
+          <div class="feature-icon">🔒</div>
+          <h3>Secure & Private</h3>
+          <p>
+            Your data is encrypted and secured. We never share your financial
+            information with third parties.
+          </p>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="feature-card">
+          <div class="feature-icon">📱</div>
+          <h3>Mobile Friendly</h3>
+          <p>
+            Track expenses on the go. Our responsive design works perfectly on
+            phones, tablets, and desktops.
+          </p>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3>Fast & Easy</h3>
+          <p>
+            Add expenses in seconds. Simple, intuitive interface means you'll
+            actually use it consistently.
+          </p>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="feature-card">
+          <div class="feature-icon">📥</div>
+          <h3>Export Data</h3>
+          <p>
+            Download your expense reports as PDF. Perfect for analysis, taxes,
+            or sharing with financial advisors.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Stats Section -->
+<section class="stats">
+  <div class="container">
+    <div class="row">
+      <div class="col-md-3">
+        <div class="stat-box">
+          <div class="stat-number">1000+</div>
+          <div class="stat-label">Active Users</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="stat-box">
+          <div class="stat-number">$2M+</div>
+          <div class="stat-label">Tracked</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="stat-box">
+          <div class="stat-number">100%</div>
+          <div class="stat-label">Secure</div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="stat-box">
+          <div class="stat-number">24/7</div>
+          <div class="stat-label">Support</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Testimonials Section -->
+<section style="padding: 80px 20px; background: white">
+  <div class="container">
+    <h2
+      style="
+        text-align: center;
+        margin-bottom: 50px;
+        color: #333;
+        font-size: 2.5rem;
+      "
+    >
+      What Users Say
+    </h2>
+
+    <div class="row">
+      <div class="col-md-4">
+        <div class="testimonial">
+          <div class="stars">★★★★★</div>
+          <p>
+            "This app changed how I manage my money. I finally understand where
+            every dollar goes!"
+          </p>
+          <div class="testimonial-author">- Sarah M.</div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="testimonial">
+          <div class="stars">★★★★★</div>
+          <p>
+            "Simple, elegant, and exactly what I needed. No bloated features,
+            just the essentials."
+          </p>
+          <div class="testimonial-author">- John D.</div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="testimonial">
+          <div class="stars">★★★★★</div>
+          <p>
+            "The budget alerts saved me hundreds! Highly recommend to anyone
+            serious about finances."
+          </p>
+          <div class="testimonial-author">- Emma L.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA Footer Section -->
+<section class="footer-cta">
+  <div class="container">
+    <h2>Ready to Take Control of Your Finances?</h2>
+    <p style="font-size: 1.2rem; margin-bottom: 30px; opacity: 0.95">
+      Join thousands of users who are already tracking their expenses smarter.
+    </p>
+
+    {% if not session.get("user_id") %}
+    <div class="cta-buttons">
+      <a
+        href="{{ url_for('auth.register') }}"
+        class="btn btn-primary-light btn-large"
+      >
+        Create Free Account
+      </a>
+      <a
+        href="{{ url_for('auth.login') }}"
+        class="btn btn-secondary-light btn-large"
+      >
+        Sign In
+      </a>
+    </div>
+    {% else %}
+    <a
+      href="{{ url_for('main.dashboard') }}"
+      class="btn btn-primary-light btn-large"
+    >
+      View Dashboard
+    </a>
+    {% endif %}
+  </div>
+</section>
+
+<style>
+  {% if not session.get("user_id") %}
+  body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  }
+  {% endif %}
+</style>
+
+{% endblock %}

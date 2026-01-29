@@ -1,0 +1,9 @@
+cs50
+Flask
+Flask-Session
+Flask-WTF
+pytz
+requests
+python-dotenv
+fpdf2
+email-validator

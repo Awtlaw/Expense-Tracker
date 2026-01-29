@@ -1,0 +1,133 @@
+{% extends "layout.html" %}
+{% block title %}Spending Insights{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <!-- HERO HEADER -->
+    <div class="text-center mb-5">
+        <h2 class="fw-bold">Your Spending Insights</h2>
+        <p class="text-muted">
+            A breakdown of where your money goes and how your habits are changing
+        </p>
+    </div>
+
+    <!-- KEY METRICS -->
+    <div class="row g-3 mb-4 text-center">
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <h6 class="text-muted">This Week</h6>
+                    <h3 class="text-danger">{{ weekly_expenses | usd }}</h3>
+                    <small class="text-muted">Last 7 days</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <h6 class="text-muted">This Month</h6>
+                    <h3 class="text-danger">{{ monthly_expenses | usd }}</h3>
+                    <small class="text-muted">Current month</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <h6 class="text-muted">This Year</h6>
+                    <h3 class="text-danger">{{ yearly_expenses | usd }}</h3>
+                    <small class="text-muted">Year to date</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- COMPARISON INSIGHT -->
+    <div class="alert alert-info text-center shadow-sm mb-4">
+        {% if month_change > 0 %}
+            <strong>⚠ Spending Increased</strong><br>
+            You spent {{ month_change | usd }} more than last month.
+        {% elif month_change < 0 %}
+            <strong>✅ Spending Improved</strong><br>
+            You saved {{ (-month_change) | usd }} compared to last month.
+        {% else %}
+            <strong>➖ No Change</strong><br>
+            Your spending stayed the same as last month.
+        {% endif %}
+    </div>
+
+    <!-- MAIN INSIGHTS -->
+    <div class="row g-4 mb-5">
+        <!-- CATEGORY CHART -->
+        <div class="col-md-7">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <h5 class="mb-3">Where Your Money Went</h5>
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- TOP SPENDING -->
+        <div class="col-md-5">
+            <div class="card shadow-sm h-100">
+                <div class="card-body">
+                    <h5 class="mb-3">Top Spending Area</h5>
+                    <p class="fs-3 fw-bold text-primary">{{ top_category }}</p>
+                    <p class="text-muted">
+                        This category accounts for the largest portion of your expenses.
+                    </p>
+
+                    {% if top_category != "N/A" %}
+                        <div class="alert alert-warning mt-3">
+                            Consider setting a limit for <strong>{{ top_category }}</strong>.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ACTIONABLE ADVICE -->
+    <div class="card shadow-sm border-0 mb-5">
+        <div class="card-body">
+            <h5 class="mb-3">What You Can Do Next</h5>
+            <ul class="mb-0">
+                <li>Track daily spending to reduce surprises</li>
+                <li>Focus on lowering expenses in <strong>{{ top_category }}</strong></li>
+                <li>Review expenses weekly to stay in control</li>
+                <li>Set a monthly spending goal</li>
+            </ul>
+        </div>
+    </div>
+
+</div>
+
+<!-- CHART -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+new Chart(document.getElementById('categoryChart'), {
+    type: 'doughnut',
+    data: {
+        labels: {{ category_labels | tojson }},
+        datasets: [{
+            data: {{ category_totals | tojson }},
+            backgroundColor: [
+                '#dc3545', '#0d6efd', '#ffc107',
+                '#198754', '#6f42c1', '#fd7e14'
+            ],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        cutout: '65%',
+        plugins: {
+            legend: { position: 'bottom' }
+        }
+    }
+});
+</script>
+{% endblock %}

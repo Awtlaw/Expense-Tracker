@@ -1,0 +1,437 @@
+{% extends "layout.html" %} {% block title %}Dashboard{% endblock %} {% block
+content %}
+
+<!-- Budget Warnings -->
+{% if budget_warnings %}
+<div class="alert alert-warning alert-dismissible fade show mb-4" role="alert">
+  <h5 class="alert-heading">
+    <i class="fas fa-exclamation-triangle"></i> Budget Alerts
+  </h5>
+  {% for warning in budget_warnings %}
+  <div class="mb-2">
+    <strong>{{ warning.category }}</strong>: Exceeded by
+    <span class="text-danger">${{ "%.2f"|format(warning.exceeded) }}</span>
+    <div class="progress">
+      <div
+        class="progress-bar bg-danger"
+        role="progressbar"
+        style="width: {{ (warning.spent / warning.limit * 100)|min(100) }}%"
+        aria-valuenow="{{ warning.spent }}"
+        aria-valuemin="0"
+        aria-valuemax="{{ warning.limit }}"
+      >
+        ${{ "%.2f"|format(warning.spent) }} / ${{ "%.2f"|format(warning.limit)
+        }}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  <button
+    type="button"
+    class="btn-close"
+    data-bs-dismiss="alert"
+    aria-label="Close"
+  ></button>
+</div>
+{% endif %}
+
+<!-- Total Monthly Budget Warning -->
+{% if total_budget_warning %}
+<div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+  <h5 class="alert-heading">
+    <i class="fas fa-exclamation-circle"></i> Monthly Spending Limit Exceeded!
+  </h5>
+  <p class="mb-2">You have exceeded your total monthly budget.</p>
+  <div class="progress mb-2">
+    <div class="progress-bar bg-danger" style="width: 100%">
+      ${{ "%.2f"|format(total_budget_warning.spent) }} / ${{
+      "%.2f"|format(total_budget_warning.limit) }}
+    </div>
+  </div>
+  <small
+    ><strong>Over by:</strong> ${{ "%.2f"|format(total_budget_warning.exceeded)
+    }}</small
+  >
+  <button
+    type="button"
+    class="btn-close"
+    data-bs-dismiss="alert"
+    aria-label="Close"
+  ></button>
+</div>
+{% endif %}
+
+<div class="row mb-4">
+  <!-- Current Balance -->
+  <div class="col-md-4">
+    <div class="card text-white bg-primary mb-3">
+      <div class="card-body">
+        <h5 class="card-title">Current Balance</h5>
+        <h2>{{ balance|usd }}</h2>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monthly Income -->
+  <div class="col-md-4">
+    <div class="card text-white bg-success mb-3">
+      <div class="card-body">
+        <h5 class="card-title">Income (This Month)</h5>
+        <h2>{{ income_month|usd }}</h2>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monthly Expenses -->
+  <div class="col-md-4">
+    <div class="card text-white bg-danger mb-3">
+      <div class="card-body">
+        <h5 class="card-title">Expenses (This Month)</h5>
+        <h2>{{ expenses_month|usd }}</h2>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Total Monthly Budget Card -->
+{% if total_budget_limit %}
+<div class="row mb-4">
+  <div class="col-md-6">
+    <div
+      class="card {% if total_budget_warning %}border-danger{% elif (expenses_month / total_budget_limit * 100) > 75 %}border-warning{% else %}border-success{% endif %} shadow-sm"
+    >
+      <div class="card-body">
+        <h5 class="card-title">
+          <i class="fas fa-bullseye"></i> Monthly Spending Limit
+        </h5>
+        <h3 class="text-primary">${{ "%.2f"|format(expenses_month) }}</h3>
+        <small class="text-muted"
+          >Budget: ${{ "%.2f"|format(total_budget_limit) }}</small
+        >
+        <div class="progress mt-3" style="height: 12px">
+          <div
+            class="progress-bar {% if total_budget_warning %}bg-danger{% elif (expenses_month / total_budget_limit * 100) > 75 %}bg-warning{% else %}bg-success{% endif %}"
+            style="width: {{ [expenses_month / total_budget_limit * 100, 100]|min }}%"
+          ></div>
+        </div>
+        <div class="mt-2">
+          {% if total_budget_warning %}
+          <small class="text-danger"
+            ><i class="fas fa-exclamation-circle"></i> Over by ${{
+            "%.2f"|format(total_budget_warning.exceeded) }}</small
+          >
+          {% else %}
+          <small class="text-success">
+            ${{ "%.2f"|format(total_budget_limit - expenses_month) }} remaining
+          </small>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Charts -->
+<div class="row">
+  <!-- Pie Chart -->
+  <div class="col-md-6">
+    <div class="card mb-3">
+      <div class="card-header">Expenses by Category</div>
+      <div class="card-body">
+        <canvas id="expensesPie"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bar Chart -->
+  <div class="col-md-6">
+    <div class="card mb-3">
+      <div class="card-header">Monthly Income vs Expenses</div>
+      <div class="card-body">
+        <canvas id="incomeExpenseBar"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Buttons -->
+<div class="row mt-4 text-center">
+  <div class="col-md-4 mb-2">
+    <button
+      class="btn btn-success w-100"
+      data-bs-toggle="modal"
+      data-bs-target="#addIncomeModal"
+    >
+      Add Income
+    </button>
+  </div>
+  <div class="col-md-4 mb-2">
+    <button
+      class="btn btn-danger w-100"
+      data-bs-toggle="modal"
+      data-bs-target="#addExpenseModal"
+    >
+      Add Expense
+    </button>
+  </div>
+  <div class="col-md-4 mb-2">
+    <a href="/reports" class="btn btn-primary w-100">View Reports</a>
+  </div>
+</div>
+
+<!-- Add Income Modal -->
+<div
+  class="modal fade"
+  id="addIncomeModal"
+  tabindex="-1"
+  aria-labelledby="addIncomeModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addIncomeModalLabel">Add Income</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+
+      <form action="{{ url_for('income.add_income') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Amount</label>
+            <input
+              type="number"
+              step="0.01"
+              name="amount"
+              class="form-control"
+              required
+            />
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Date</label>
+            <input
+              type="date"
+              name="date"
+              class="form-control"
+              value="{{ today }}"
+              required
+            />
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Source</label>
+            <input
+              type="text"
+              name="source"
+              class="form-control"
+              placeholder="Salary, Bonus, Gift..."
+              required
+            />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-bs-dismiss="modal"
+          >
+            Close
+          </button>
+          <button type="submit" class="btn btn-primary">Add Income</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Add Expense Modal -->
+<div
+  class="modal fade"
+  id="addExpenseModal"
+  tabindex="-1"
+  aria-labelledby="addExpenseModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addExpenseModalLabel">Add Expenses</h5>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+
+      <form
+        id="multiExpenseForm"
+        action="{{ url_for('expenses.add_expense') }}"
+        method="POST"
+      >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <div class="modal-body">
+          <div id="expenseFieldsContainer">
+            <!-- One expense row by default -->
+            <div class="expense-row mb-3 row g-2">
+              <div class="col-md-3">
+                <input
+                  type="number"
+                  step="0.01"
+                  name="amount[]"
+                  class="form-control"
+                  placeholder="Amount"
+                  required
+                />
+              </div>
+              <div class="col-md-3">
+                <input
+                  type="text"
+                  name="category[]"
+                  class="form-control"
+                  placeholder="Category"
+                  required
+                />
+              </div>
+              <div class="col-md-3">
+                <input
+                  type="date"
+                  name="date[]"
+                  class="form-control"
+                  value="{{ today }}"
+                  required
+                />
+              </div>
+              <div class="col-md-3">
+                <input
+                  type="text"
+                  name="note[]"
+                  class="form-control"
+                  placeholder="Note (optional)"
+                />
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="btn btn-secondary mb-3"
+            id="addExpenseRowBtn"
+          >
+            + Add Another Expense
+          </button>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-bs-dismiss="modal"
+          >
+            Close
+          </button>
+          <button type="submit" class="btn btn-danger">Add Expenses</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Chart JS -->
+<!-- Chart JS & Dynamic Expense Rows -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+
+      // --- Dynamic Add Expense Rows ---
+      const addBtn = document.getElementById('addExpenseRowBtn');
+      const container = document.getElementById('expenseFieldsContainer');
+
+      addBtn.addEventListener('click', () => {
+          const newRow = document.createElement('div');
+          newRow.classList.add('expense-row', 'mb-3', 'row', 'g-2');
+          newRow.innerHTML = `
+              <div class="col-md-3">
+                  <input type="number" step="0.01" name="amount[]" class="form-control" placeholder="Amount" required>
+              </div>
+              <div class="col-md-3">
+                  <input type="text" name="category[]" class="form-control" placeholder="Category" required>
+              </div>
+              <div class="col-md-3">
+                  <input type="date" name="date[]" class="form-control" value="{{ today }}" required>
+              </div>
+              <div class="col-md-2">
+                  <input type="text" name="note[]" class="form-control" placeholder="Note (optional)">
+              </div>
+              <div class="col-md-1">
+                  <button type="button" class="btn btn-danger btn-sm remove-row">×</button>
+              </div>
+          `;
+          container.appendChild(newRow);
+
+          newRow.querySelector('.remove-row').addEventListener('click', () => {
+              newRow.remove();
+          });
+      });
+
+      // --- Pie Chart: Expenses by Category ---
+      new Chart(document.getElementById('expensesPie'), {
+          type: 'pie',
+          data: {
+              labels: {{ expense_categories | tojson }},
+              datasets: [{
+                  data: {{ expense_amounts | tojson }},
+                  backgroundColor: [
+                      'rgba(255, 99, 132, 0.6)',
+                      'rgba(54, 162, 235, 0.6)',
+                      'rgba(255, 206, 86, 0.6)',
+                      'rgba(75, 192, 192, 0.6)',
+                      'rgba(153, 102, 255, 0.6)',
+                      'rgba(255, 159, 64, 0.6)'
+                  ],
+                  borderWidth: 1
+              }]
+          },
+          options: {
+              responsive: true
+          }
+      });
+
+      // --- Bar Chart: Income vs Expenses ---
+      new Chart(document.getElementById('incomeExpenseBar'), {
+          type: 'bar',
+          data: {
+              labels: {{ months | tojson }},
+              datasets: [
+                  {
+                      label: 'Income',
+                      data: {{ income_data | tojson }},
+                      backgroundColor: 'rgba(54, 162, 235, 0.6)'
+                  },
+                  {
+                      label: 'Expenses',
+                      data: {{ expenses_data | tojson }},
+                      backgroundColor: 'rgba(255, 99, 132, 0.6)'
+                  }
+              ]
+          },
+          options: {
+              responsive: true,
+              scales: {
+                  y: {
+                      beginAtZero: true
+                  }
+              }
+          }
+      });
+
+  });
+</script>
+
+{% endblock %}
