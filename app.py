@@ -66,6 +66,9 @@ def create_app():
     @app.errorhandler(403)
     def forbidden(error):
         return render_template("error.html", code=403, message="Access Forbidden"), 403
+    db_path = "database.db"
+    if not os.path.exists(db_path):
+        open(db_path, "a").close()
 
     return app
 
