@@ -193,15 +193,27 @@ def profile():
         total_budget = Budget.query.filter_by(user_id=user_id, month=current_month, category='TOTAL_MONTHLY').first()
         total_monthly_budget = total_budget.budget_limit if total_budget else None
         
-        # Get budget suggestions from last 90 days
+        # Get budget suggestions from last 90 days using subquery
         three_months_ago = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
         
-        category_data = db.session.query(
+        # Subquery to get monthly totals per category
+        monthly_totals = db.session.query(
             Expense.category,
-            func.avg(func.sum(Expense.amount))
-        ).filter(Expense.user_id == user_id, Expense.date >= three_months_ago).group_by(
-            Expense.category
-        ).all()
+            func.strftime('%Y-%m', Expense.date).label('month'),
+            func.sum(Expense.amount).label('monthly_total')
+        ).filter(
+            Expense.user_id == user_id,
+            Expense.date >= three_months_ago
+        ).group_by(
+            Expense.category,
+            func.strftime('%Y-%m', Expense.date)
+        ).subquery()
+        
+        # Query to get average of monthly totals
+        category_data = db.session.query(
+            monthly_totals.c.category,
+            func.avg(monthly_totals.c.monthly_total).label('avg_spent')
+        ).group_by(monthly_totals.c.category).all()
         
         budget_suggestions = []
         for category, avg_spent in category_data:
@@ -455,12 +467,24 @@ def get_budget_suggestions():
     try:
         three_months_ago = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
         
-        category_data = db.session.query(
+        # Subquery to get monthly totals per category
+        monthly_totals = db.session.query(
             Expense.category,
-            func.avg(func.sum(Expense.amount))
-        ).filter(Expense.user_id == user_id, Expense.date >= three_months_ago).group_by(
-            Expense.category
-        ).all()
+            func.strftime('%Y-%m', Expense.date).label('month'),
+            func.sum(Expense.amount).label('monthly_total')
+        ).filter(
+            Expense.user_id == user_id,
+            Expense.date >= three_months_ago
+        ).group_by(
+            Expense.category,
+            func.strftime('%Y-%m', Expense.date)
+        ).subquery()
+        
+        # Query to get average of monthly totals
+        category_data = db.session.query(
+            monthly_totals.c.category,
+            func.avg(monthly_totals.c.monthly_total).label('avg_spent')
+        ).group_by(monthly_totals.c.category).all()
         
         suggestions = []
         for category, avg_spent in category_data:
