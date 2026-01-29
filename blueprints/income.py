@@ -1,10 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, session, flash, url_for
 from datetime import datetime
-from cs50 import SQL
+from models import db, Income
 from helpers import validate_amount, validate_date, sanitize_text
-import os
-
-db = SQL(os.getenv("DATABASE_URL", "sqlite:///database.db"))
 
 income_bp = Blueprint('income', __name__)
 
@@ -31,10 +28,12 @@ def add_income():
             return redirect(url_for("income.add_income"))
 
         try:
-            db.execute("INSERT INTO income (user_id, amount, date, source) VALUES (?, ?, ?, ?)",
-                       session["user_id"], amount, date, source)
+            income = Income(user_id=session["user_id"], amount=amount, date=date, source=source)
+            db.session.add(income)
+            db.session.commit()
             flash("Income added successfully!")
         except Exception as e:
+            db.session.rollback()
             flash(f"Error adding income: {str(e)}")
 
         return redirect(url_for("main.dashboard"))
@@ -54,23 +53,17 @@ def income_history():
     page = int(request.args.get("page", 1))
     per_page = 10
 
-    sql = "SELECT * FROM income WHERE user_id = ?"
-    params = [user_id]
+    query = Income.query.filter_by(user_id=user_id)
 
     if start_date:
-        sql += " AND date >= ?"
-        params.append(start_date)
+        query = query.filter(Income.date >= start_date)
     if end_date:
-        sql += " AND date <= ?"
-        params.append(end_date)
+        query = query.filter(Income.date <= end_date)
 
-    total_rows = db.execute("SELECT COUNT(*) AS count FROM (" + sql + ")", *params)[0]["count"]
+    total_rows = query.count()
     total_pages = (total_rows + per_page - 1) // per_page
 
-    sql += " ORDER BY date DESC LIMIT ? OFFSET ?"
-    params.extend([per_page, (page - 1) * per_page])
-
-    income = db.execute(sql, *params)
+    income = query.order_by(Income.date.desc()).limit(per_page).offset((page - 1) * per_page).all()
 
     return render_template(
         "income_history.html",
@@ -89,9 +82,15 @@ def delete_income(income_id):
         return redirect(url_for("auth.login"))
 
     try:
-        db.execute("DELETE FROM income WHERE id = ? AND user_id = ?", income_id, session["user_id"])
-        flash("Income deleted successfully.")
+        income_record = Income.query.filter_by(id=income_id, user_id=session["user_id"]).first()
+        if income_record:
+            db.session.delete(income_record)
+            db.session.commit()
+            flash("Income deleted successfully.")
+        else:
+            flash("Income not found.")
     except Exception as e:
+        db.session.rollback()
         flash(f"Error deleting income: {str(e)}")
 
     return redirect(url_for("income.income_history"))

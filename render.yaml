@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: expense-tracker
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn 'app:create_app()'
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: DATABASE_URL
+        value: sqlite:///database.db
+      - key: SECRET_KEY
+        value: your-secret-key-here-change-in-production
+      - key: FLASK_ENV
+        value: production

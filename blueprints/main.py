@@ -1,13 +1,11 @@
 from flask import Blueprint, render_template, request, redirect, session, flash, url_for, Response
 from datetime import datetime, timedelta
-from cs50 import SQL
 from io import BytesIO
 from fpdf import FPDF
 from helpers import validate_password, sanitize_text
 from werkzeug.security import check_password_hash, generate_password_hash
-import os
-
-db = SQL(os.getenv("DATABASE_URL", "sqlite:///database.db"))
+from models import db, User, Expense, Income, Budget
+from sqlalchemy import func
 
 main_bp = Blueprint('main', __name__)
 
@@ -23,34 +21,35 @@ def dashboard():
     user_id = session["user_id"]
 
     try:
-        income_total = db.execute("SELECT SUM(amount) AS total FROM income WHERE user_id = ?", user_id)[0]["total"] or 0
-        expense_total = db.execute("SELECT SUM(amount) AS total FROM expenses WHERE user_id = ?", user_id)[0]["total"] or 0
+        income_total = db.session.query(func.sum(Income.amount)).filter_by(user_id=user_id).scalar() or 0
+        expense_total = db.session.query(func.sum(Expense.amount)).filter_by(user_id=user_id).scalar() or 0
         balance = income_total - expense_total
 
         current_month = datetime.now().strftime("%Y-%m")
-        income_month = db.execute("SELECT SUM(amount) AS total FROM income WHERE user_id = ? AND strftime('%Y-%m', date) = ?", user_id, current_month)[0]["total"] or 0
-        expenses_month = db.execute("SELECT SUM(amount) AS total FROM expenses WHERE user_id = ? AND strftime('%Y-%m', date) = ?", user_id, current_month)[0]["total"] or 0
+        income_month = db.session.query(func.sum(Income.amount)).filter_by(user_id=user_id).filter(
+            func.strftime('%Y-%m', Income.date) == current_month
+        ).scalar() or 0
+        expenses_month = db.session.query(func.sum(Expense.amount)).filter_by(user_id=user_id).filter(
+            func.strftime('%Y-%m', Expense.date) == current_month
+        ).scalar() or 0
 
-        categories = db.execute("SELECT category, SUM(amount) AS total FROM expenses WHERE user_id = ? GROUP BY category", user_id)
-        expense_categories = [row["category"] for row in categories] if categories else []
-        expense_amounts = [row["total"] for row in categories] if categories else []
+        categories = db.session.query(Expense.category, func.sum(Expense.amount)).filter_by(user_id=user_id).group_by(Expense.category).all()
+        expense_categories = [row[0] for row in categories] if categories else []
+        expense_amounts = [row[1] for row in categories] if categories else []
 
         # Get budget data
-        budgets_result = db.execute("SELECT category, budget_limit FROM budgets WHERE user_id = ? AND month = ?", user_id, current_month)
-        budgets = budgets_result if budgets_result and isinstance(budgets_result, list) else []
+        budgets = Budget.query.filter_by(user_id=user_id, month=current_month).all()
         budget_warnings = []
         budget_data = []
         
         # Get total monthly budget
-        total_budget_result = db.execute(
-            "SELECT budget_limit FROM budgets WHERE user_id = ? AND month = ? AND category = 'TOTAL_MONTHLY'",
-            user_id, current_month
-        )
         total_budget_limit = None
-        if total_budget_result and isinstance(total_budget_result, list) and len(total_budget_result) > 0:
-            total_budget_limit = total_budget_result[0]["budget_limit"]
-        total_budget_warning = None
+        for budget in budgets:
+            if budget.category == 'TOTAL_MONTHLY':
+                total_budget_limit = budget.budget_limit
+                break
         
+        total_budget_warning = None
         if total_budget_limit:
             if expenses_month > total_budget_limit:
                 total_budget_warning = {
@@ -60,29 +59,28 @@ def dashboard():
                 }
         
         for budget in budgets:
-            category = budget["category"]
-            if category == "TOTAL_MONTHLY":
+            if budget.category == "TOTAL_MONTHLY":
                 continue
-            limit = budget["budget_limit"]
-            spent = db.execute("SELECT SUM(amount) AS total FROM expenses WHERE user_id = ? AND category = ? AND strftime('%Y-%m', date) = ?", 
-                             user_id, category, current_month)[0]["total"] or 0
-            percentage = (spent / limit * 100) if limit > 0 else 0
+            spent = db.session.query(func.sum(Expense.amount)).filter_by(user_id=user_id, category=budget.category).filter(
+                func.strftime('%Y-%m', Expense.date) == current_month
+            ).scalar() or 0
+            percentage = (spent / budget.budget_limit * 100) if budget.budget_limit > 0 else 0
             
             budget_data.append({
-                "category": category,
-                "limit": limit,
+                "category": budget.category,
+                "limit": budget.budget_limit,
                 "spent": spent,
-                "remaining": max(0, limit - spent),
+                "remaining": max(0, budget.budget_limit - spent),
                 "percentage": min(percentage, 100),
-                "is_exceeded": spent > limit
+                "is_exceeded": spent > budget.budget_limit
             })
             
-            if spent > limit:
+            if spent > budget.budget_limit:
                 budget_warnings.append({
-                    "category": category,
-                    "limit": limit,
+                    "category": budget.category,
+                    "limit": budget.budget_limit,
                     "spent": spent,
-                    "exceeded": spent - limit
+                    "exceeded": spent - budget.budget_limit
                 })
 
         months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
@@ -126,35 +124,35 @@ def reports():
         last_month = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
         current_year = now.strftime("%Y")
 
-        weekly_expenses = db.execute(
-            "SELECT SUM(amount) AS total FROM expenses WHERE user_id = ? AND date >= date('now','-7 days')",
-            user_id
-        )[0]["total"] or 0
+        # Last 7 days expenses
+        seven_days_ago = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+        weekly_expenses = db.session.query(func.sum(Expense.amount)).filter_by(user_id=user_id).filter(
+            Expense.date >= seven_days_ago
+        ).scalar() or 0
 
-        monthly_expenses = db.execute(
-            "SELECT SUM(amount) AS total FROM expenses WHERE user_id = ? AND strftime('%Y-%m', date) = ?",
-            user_id, current_month
-        )[0]["total"] or 0
+        # Current month expenses
+        monthly_expenses = db.session.query(func.sum(Expense.amount)).filter_by(user_id=user_id).filter(
+            func.strftime('%Y-%m', Expense.date) == current_month
+        ).scalar() or 0
 
-        yearly_expenses = db.execute(
-            "SELECT SUM(amount) AS total FROM expenses WHERE user_id = ? AND strftime('%Y', date) = ?",
-            user_id, current_year
-        )[0]["total"] or 0
+        # Current year expenses
+        yearly_expenses = db.session.query(func.sum(Expense.amount)).filter_by(user_id=user_id).filter(
+            func.strftime('%Y', Expense.date) == current_year
+        ).scalar() or 0
 
-        last_month_expenses = db.execute(
-            "SELECT SUM(amount) AS total FROM expenses WHERE user_id = ? AND strftime('%Y-%m', date) = ?",
-            user_id, last_month
-        )[0]["total"] or 0
+        # Last month expenses
+        last_month_expenses = db.session.query(func.sum(Expense.amount)).filter_by(user_id=user_id).filter(
+            func.strftime('%Y-%m', Expense.date) == last_month
+        ).scalar() or 0
 
         month_change = monthly_expenses - last_month_expenses
 
-        categories = db.execute(
-            "SELECT category, SUM(amount) AS total FROM expenses WHERE user_id = ? GROUP BY category ORDER BY total DESC",
-            user_id
-        )
+        categories = db.session.query(Expense.category, func.sum(Expense.amount)).filter_by(user_id=user_id).group_by(
+            Expense.category
+        ).order_by(func.sum(Expense.amount).desc()).all()
 
-        category_labels = [row["category"] for row in categories]
-        category_totals = [row["total"] for row in categories]
+        category_labels = [row[0] for row in categories]
+        category_totals = [row[1] for row in categories]
         top_category = category_labels[0] if category_labels else "N/A"
 
         return render_template(
@@ -182,57 +180,41 @@ def profile():
     user_id = session["user_id"]
 
     try:
-        user = db.execute("SELECT username, email, created_at FROM users WHERE id = ?", user_id)[0]
+        user = User.query.get(user_id)
 
-        total_income = db.execute(
-            "SELECT SUM(amount) AS total FROM income WHERE user_id = ?", user_id
-        )[0]["total"] or 0
+        total_income = db.session.query(func.sum(Income.amount)).filter_by(user_id=user_id).scalar() or 0
 
-        total_expenses = db.execute(
-            "SELECT SUM(amount) AS total FROM expenses WHERE user_id = ?", user_id
-        )[0]["total"] or 0
+        total_expenses = db.session.query(func.sum(Expense.amount)).filter_by(user_id=user_id).scalar() or 0
 
         balance = total_income - total_expenses
 
         # Get total monthly budget
         current_month = datetime.now().strftime("%Y-%m")
-        total_budget_result = db.execute(
-            "SELECT budget_limit FROM budgets WHERE user_id = ? AND month = ? AND category = 'TOTAL_MONTHLY'",
-            user_id, current_month
-        )
-        total_monthly_budget = total_budget_result[0]["budget_limit"] if total_budget_result else None
+        total_budget = Budget.query.filter_by(user_id=user_id, month=current_month, category='TOTAL_MONTHLY').first()
+        total_monthly_budget = total_budget.budget_limit if total_budget else None
         
-        # Get budget suggestions
+        # Get budget suggestions from last 90 days
         three_months_ago = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-        categories_data = db.execute(
-            """SELECT category, AVG(monthly_total) as avg_spent 
-               FROM (
-                   SELECT category, strftime('%Y-%m', date) as month, SUM(amount) as monthly_total
-                   FROM expenses 
-                   WHERE user_id = ? AND date >= ?
-                   GROUP BY category, month
-               )
-               GROUP BY category
-            """,
-            user_id, three_months_ago
-        )
+        
+        category_data = db.session.query(
+            Expense.category,
+            func.avg(func.sum(Expense.amount))
+        ).filter(Expense.user_id == user_id, Expense.date >= three_months_ago).group_by(
+            Expense.category
+        ).all()
         
         budget_suggestions = []
-        for row in categories_data:
-            category = row["category"]
-            avg_spent = row["avg_spent"] or 0
+        for category, avg_spent in category_data:
+            avg_spent = avg_spent or 0
             suggested_budget = round(avg_spent * 1.15, 2)
             
-            existing = db.execute(
-                "SELECT budget_limit FROM budgets WHERE user_id = ? AND category = ? AND month = ?",
-                user_id, category, current_month
-            )
+            existing = Budget.query.filter_by(user_id=user_id, category=category, month=current_month).first()
             
             budget_suggestions.append({
                 "category": category,
                 "avg_spent": round(avg_spent, 2),
                 "suggested": suggested_budget,
-                "has_budget": len(existing) > 0
+                "has_budget": existing is not None
             })
 
         return render_template(
@@ -274,16 +256,17 @@ def change_password():
         return redirect(url_for("main.profile"))
 
     try:
-        user = db.execute("SELECT hash FROM users WHERE id = ?", user_id)[0]
+        user = User.query.get(user_id)
 
-        if not check_password_hash(user["hash"], current_password):
+        if not check_password_hash(user.hash, current_password):
             flash("Current password is incorrect.")
             return redirect(url_for("main.profile"))
 
-        new_hash = generate_password_hash(new_password)
-        db.execute("UPDATE users SET hash = ? WHERE id = ?", new_hash, user_id)
+        user.hash = generate_password_hash(new_password)
+        db.session.commit()
         flash("Password changed successfully!")
     except Exception as e:
+        db.session.rollback()
         flash(f"Error changing password: {str(e)}")
 
     return redirect(url_for("main.profile"))
@@ -297,7 +280,7 @@ def export_pdf():
     user_id = session["user_id"]
 
     try:
-        expenses = db.execute("SELECT date, category, amount, note FROM expenses WHERE user_id = ? ORDER BY date DESC", user_id)
+        expenses = Expense.query.filter_by(user_id=user_id).order_by(Expense.date.desc()).all()
 
         pdf = FPDF()
         pdf.add_page()
@@ -314,10 +297,10 @@ def export_pdf():
 
         pdf.set_font("Arial", "", 12)
         for exp in expenses:
-            pdf.cell(40, 10, exp["date"], 1)
-            pdf.cell(50, 10, exp["category"], 1)
-            pdf.cell(30, 10, f"${exp['amount']:,.2f}", 1)
-            pdf.cell(70, 10, exp["note"][:35] if exp["note"] else "", 1)
+            pdf.cell(40, 10, exp.date, 1)
+            pdf.cell(50, 10, exp.category, 1)
+            pdf.cell(30, 10, f"${exp.amount:,.2f}", 1)
+            pdf.cell(70, 10, exp.note[:35] if exp.note else "", 1)
             pdf.ln()
 
         output = BytesIO()
@@ -351,14 +334,20 @@ def set_budget():
             return redirect(url_for("main.profile"))
         
         current_month = datetime.now().strftime("%Y-%m")
-        db.execute(
-            "INSERT OR REPLACE INTO budgets (user_id, category, budget_limit, month) VALUES (?, ?, ?, ?)",
-            user_id, category, budget_limit, current_month
-        )
+        existing = Budget.query.filter_by(user_id=user_id, category=category, month=current_month).first()
+        
+        if existing:
+            existing.budget_limit = budget_limit
+        else:
+            new_budget = Budget(user_id=user_id, category=category, budget_limit=budget_limit, month=current_month)
+            db.session.add(new_budget)
+        
+        db.session.commit()
         flash(f"Budget set for {category}: ${budget_limit:.2f}")
     except ValueError:
         flash("Invalid budget amount")
     except Exception as e:
+        db.session.rollback()
         flash(f"Error setting budget: {str(e)}")
     
     return redirect(url_for("main.profile"))
@@ -383,14 +372,20 @@ def set_total_budget():
             return redirect(url_for("main.profile"))
         
         current_month = datetime.now().strftime("%Y-%m")
-        db.execute(
-            "INSERT OR REPLACE INTO budgets (user_id, category, budget_limit, month) VALUES (?, ?, ?, ?)",
-            user_id, "TOTAL_MONTHLY", total_limit, current_month
-        )
+        existing = Budget.query.filter_by(user_id=user_id, category="TOTAL_MONTHLY", month=current_month).first()
+        
+        if existing:
+            existing.budget_limit = total_limit
+        else:
+            new_budget = Budget(user_id=user_id, category="TOTAL_MONTHLY", budget_limit=total_limit, month=current_month)
+            db.session.add(new_budget)
+        
+        db.session.commit()
         flash(f"Total monthly budget set to ${total_limit:.2f}")
     except ValueError:
         flash("Invalid budget amount")
     except Exception as e:
+        db.session.rollback()
         flash(f"Error setting budget: {str(e)}")
     
     return redirect(url_for("main.profile"))
@@ -405,7 +400,6 @@ def set_budgets_bulk():
     current_month = datetime.now().strftime("%Y-%m")
     
     try:
-        # Get all budget amounts from form
         budgets = request.form
         count = 0
         
@@ -415,16 +409,20 @@ def set_budgets_bulk():
                 try:
                     budget_limit = float(value)
                     if budget_limit > 0:
-                        db.execute(
-                            "INSERT OR REPLACE INTO budgets (user_id, category, budget_limit, month) VALUES (?, ?, ?, ?)",
-                            user_id, category, budget_limit, current_month
-                        )
+                        existing = Budget.query.filter_by(user_id=user_id, category=category, month=current_month).first()
+                        if existing:
+                            existing.budget_limit = budget_limit
+                        else:
+                            new_budget = Budget(user_id=user_id, category=category, budget_limit=budget_limit, month=current_month)
+                            db.session.add(new_budget)
                         count += 1
                 except ValueError:
                     continue
         
+        db.session.commit()
         flash(f"Successfully set {count} budget(s)!")
     except Exception as e:
+        db.session.rollback()
         flash(f"Error setting budgets: {str(e)}")
     
     return redirect(url_for("main.profile"))
@@ -439,13 +437,9 @@ def get_budgets():
     current_month = datetime.now().strftime("%Y-%m")
     
     try:
-        budgets = db.execute(
-            "SELECT category, budget_limit FROM budgets WHERE user_id = ? AND month = ?",
-            user_id, current_month
-        )
-        return {
-            "budgets": budgets
-        }
+        budgets = Budget.query.filter_by(user_id=user_id, month=current_month).all()
+        budget_list = [{"category": b.category, "budget_limit": b.budget_limit} for b in budgets]
+        return {"budgets": budget_list}
     except Exception as e:
         flash(f"Error loading budgets: {str(e)}")
         return {"budgets": []}
@@ -459,40 +453,27 @@ def get_budget_suggestions():
     user_id = session["user_id"]
     
     try:
-        # Get all categories from last 3 months of expenses
         three_months_ago = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
         
-        categories_data = db.execute(
-            """SELECT category, AVG(monthly_total) as avg_spent 
-               FROM (
-                   SELECT category, strftime('%Y-%m', date) as month, SUM(amount) as monthly_total
-                   FROM expenses 
-                   WHERE user_id = ? AND date >= ?
-                   GROUP BY category, month
-               )
-               GROUP BY category
-            """,
-            user_id, three_months_ago
-        )
+        category_data = db.session.query(
+            Expense.category,
+            func.avg(func.sum(Expense.amount))
+        ).filter(Expense.user_id == user_id, Expense.date >= three_months_ago).group_by(
+            Expense.category
+        ).all()
         
         suggestions = []
-        for row in categories_data:
-            category = row["category"]
-            avg_spent = row["avg_spent"] or 0
-            # Suggest 15% above average
+        for category, avg_spent in category_data:
+            avg_spent = avg_spent or 0
             suggested_budget = round(avg_spent * 1.15, 2)
             
-            # Check if budget already exists
-            existing = db.execute(
-                "SELECT budget_limit FROM budgets WHERE user_id = ? AND category = ? AND month = ?",
-                user_id, category, datetime.now().strftime("%Y-%m")
-            )
+            existing = Budget.query.filter_by(user_id=user_id, category=category, month=datetime.now().strftime("%Y-%m")).first()
             
             suggestions.append({
                 "category": category,
                 "avg_spent": round(avg_spent, 2),
                 "suggested": suggested_budget,
-                "has_budget": len(existing) > 0
+                "has_budget": existing is not None
             })
         
         return {"suggestions": suggestions}
@@ -510,29 +491,24 @@ def budgets_page():
     current_month = datetime.now().strftime("%Y-%m")
     
     try:
-        # Get all per-category budgets
-        budgets = db.execute(
-            "SELECT id, category, budget_limit FROM budgets WHERE user_id = ? AND month = ? AND category != 'TOTAL_MONTHLY' ORDER BY category",
-            user_id, current_month
-        )
-        budgets = budgets if budgets else []
+        budgets = Budget.query.filter_by(user_id=user_id, month=current_month).filter(
+            Budget.category != 'TOTAL_MONTHLY'
+        ).order_by(Budget.category).all()
         
-        # Get expenses for each budget category to show progress
         budget_data = []
         for budget in budgets:
-            spent = db.execute(
-                "SELECT SUM(amount) AS total FROM expenses WHERE user_id = ? AND category = ? AND strftime('%Y-%m', date) = ?",
-                user_id, budget["category"], current_month
-            )[0]["total"] or 0
+            spent = db.session.query(func.sum(Expense.amount)).filter_by(user_id=user_id, category=budget.category).filter(
+                func.strftime('%Y-%m', Expense.date) == current_month
+            ).scalar() or 0
             
             budget_data.append({
-                "id": budget["id"],
-                "category": budget["category"],
-                "limit": budget["budget_limit"],
+                "id": budget.id,
+                "category": budget.category,
+                "limit": budget.budget_limit,
                 "spent": spent,
-                "remaining": max(0, budget["budget_limit"] - spent),
-                "percentage": min((spent / budget["budget_limit"] * 100) if budget["budget_limit"] > 0 else 0, 100),
-                "is_exceeded": spent > budget["budget_limit"]
+                "remaining": max(0, budget.budget_limit - spent),
+                "percentage": min((spent / budget.budget_limit * 100) if budget.budget_limit > 0 else 0, 100),
+                "is_exceeded": spent > budget.budget_limit
             })
         
         return render_template(
@@ -555,16 +531,16 @@ def delete_budget(budget_id):
     user_id = session["user_id"]
     
     try:
-        # Verify the budget belongs to the user
-        budget = db.execute("SELECT user_id FROM budgets WHERE id = ?", budget_id)
-        if not budget or budget[0]["user_id"] != user_id:
+        budget = Budget.query.get(budget_id)
+        if not budget or budget.user_id != user_id:
             flash("Budget not found")
             return redirect(url_for("main.budgets_page"))
         
-        # Delete the budget
-        db.execute("DELETE FROM budgets WHERE id = ?", budget_id)
+        db.session.delete(budget)
+        db.session.commit()
         flash("Budget deleted successfully")
         return redirect(url_for("main.budgets_page"))
     except Exception as e:
+        db.session.rollback()
         flash(f"Error deleting budget: {str(e)}")
         return redirect(url_for("main.budgets_page"))

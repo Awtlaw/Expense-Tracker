@@ -1,10 +1,8 @@
 from flask import Blueprint, render_template, request, redirect, session, flash, url_for
 from datetime import datetime
-from cs50 import SQL
+from models import db, Expense
 from helpers import validate_amount, validate_date, validate_category, sanitize_text
-import os
-
-db = SQL(os.getenv("DATABASE_URL", "sqlite:///database.db"))
+from sqlalchemy import func
 
 expenses_bp = Blueprint('expenses', __name__)
 
@@ -41,11 +39,11 @@ def add_expense():
         note = sanitize_text(note)
 
         try:
-            db.execute(
-                "INSERT INTO expenses (user_id, amount, category, date, note) VALUES (?, ?, ?, ?, ?)",
-                session["user_id"], amount, cat, dt, note
-            )
+            expense = Expense(user_id=session["user_id"], amount=amount, category=cat, date=dt, note=note)
+            db.session.add(expense)
+            db.session.commit()
         except Exception as e:
+            db.session.rollback()
             flash(f"Error adding expense: {str(e)}")
             error_count += 1
 
@@ -68,32 +66,26 @@ def expense_history():
     page = int(request.args.get("page", 1))
     per_page = 10
 
-    sql_query = "SELECT * FROM expenses WHERE user_id = ?"
-    params = [user_id]
+    query = Expense.query.filter_by(user_id=user_id)
 
     if category:
-        sql_query += " AND category = ?"
-        params.append(category)
+        query = query.filter_by(category=category)
     if start_date:
-        sql_query += " AND date >= ?"
-        params.append(start_date)
+        query = query.filter(Expense.date >= start_date)
     if end_date:
-        sql_query += " AND date <= ?"
-        params.append(end_date)
+        query = query.filter(Expense.date <= end_date)
 
-    total_expenses = db.execute("SELECT COUNT(*) AS count FROM (" + sql_query + ")", *params)[0]["count"]
+    total_expenses = query.count()
     total_pages = (total_expenses + per_page - 1) // per_page
 
-    sql_query += " ORDER BY date DESC LIMIT ? OFFSET ?"
-    params.extend([per_page, (page - 1) * per_page])
-
-    expenses = db.execute(sql_query, *params)
-    categories = [row["category"] for row in db.execute("SELECT DISTINCT category FROM expenses WHERE user_id = ?", user_id)]
+    expenses = query.order_by(Expense.date.desc()).limit(per_page).offset((page - 1) * per_page).all()
+    
+    categories_list = [row[0] for row in db.session.query(Expense.category).filter_by(user_id=user_id).distinct().all()]
 
     return render_template(
         "expense_history.html",
         expenses=expenses,
-        categories=categories,
+        categories=categories_list,
         current_category=category,
         start_date=start_date,
         end_date=end_date,
@@ -108,11 +100,10 @@ def edit_expense(expense_id):
     if "user_id" not in session:
         return redirect(url_for("auth.login"))
 
-    expense = db.execute("SELECT * FROM expenses WHERE id = ? AND user_id = ?", expense_id, session["user_id"])
+    expense = Expense.query.filter_by(id=expense_id, user_id=session["user_id"]).first()
     if not expense:
         flash("Expense not found.")
         return redirect(url_for("expenses.expense_history"))
-    expense = expense[0]
 
     if request.method == "POST":
         is_valid, amount = validate_amount(request.form.get("amount"))
@@ -125,12 +116,14 @@ def edit_expense(expense_id):
         note = sanitize_text(request.form.get("note", ""))
 
         try:
-            db.execute(
-                "UPDATE expenses SET amount = ?, category = ?, date = ?, note = ? WHERE id = ?",
-                amount, category, date, note, expense_id
-            )
+            expense.amount = amount
+            expense.category = category
+            expense.date = date
+            expense.note = note
+            db.session.commit()
             flash("Expense updated successfully.")
         except Exception as e:
+            db.session.rollback()
             flash(f"Error updating expense: {str(e)}")
 
         return redirect(url_for("expenses.expense_history"))
@@ -144,9 +137,17 @@ def delete_expense(expense_id):
         return redirect(url_for("auth.login"))
 
     try:
-        db.execute("DELETE FROM expenses WHERE id = ? AND user_id = ?", expense_id, session["user_id"])
-        flash("Expense deleted successfully.")
+        expense = Expense.query.filter_by(id=expense_id, user_id=session["user_id"]).first()
+        if expense:
+            db.session.delete(expense)
+            db.session.commit()
+            flash("Expense deleted successfully.")
+        else:
+            flash("Expense not found.")
     except Exception as e:
+        db.session.rollback()
         flash(f"Error deleting expense: {str(e)}")
+
+    return redirect(url_for("expenses.expense_history"))
 
     return redirect(url_for("expenses.expense_history"))

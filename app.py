@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Import blueprints
+# Import database and blueprints
+from models import db
 from blueprints import auth_bp, expenses_bp, income_bp, main_bp
 
 def create_app():
@@ -28,7 +29,13 @@ def create_app():
     app.config["WTF_CSRF_TIME_LIMIT"] = None
     app.config["WTF_CSRF_CHECK_DEFAULT"] = False  # Disable by default, enable selectively
     
+    # SQLAlchemy Configuration
+    database_url = os.getenv("DATABASE_URL", "sqlite:///database.db")
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    
     # Initialize extensions
+    db.init_app(app)
     Session(app)
     CSRFProtect(app)
     
@@ -37,6 +44,10 @@ def create_app():
     app.register_blueprint(expenses_bp, url_prefix="/expenses")
     app.register_blueprint(income_bp, url_prefix="/income")
     app.register_blueprint(main_bp)
+    
+    # Create database tables and app context
+    with app.app_context():
+        db.create_all()
     
     # Custom filter for currency formatting
     @app.template_filter()
@@ -66,9 +77,6 @@ def create_app():
     @app.errorhandler(403)
     def forbidden(error):
         return render_template("error.html", code=403, message="Access Forbidden"), 403
-    db_path = "database.db"
-    if not os.path.exists(db_path):
-        open(db_path, "a").close()
 
     return app
 

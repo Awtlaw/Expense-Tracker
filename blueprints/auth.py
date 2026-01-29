@@ -2,11 +2,7 @@ from flask import Blueprint, render_template, request, redirect, session, flash,
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 from helpers import validate_username, validate_email_address, validate_password
-from cs50 import SQL
-import os
-
-# Initialize database
-db = SQL(os.getenv("DATABASE_URL", "sqlite:///database.db"))
+from models import db, User
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -21,15 +17,15 @@ def login():
             return redirect(url_for("auth.login"))
 
         try:
-            user = db.execute("SELECT * FROM users WHERE username = ?", username)
+            user = User.query.filter_by(username=username).first()
 
-            if not user or not check_password_hash(user[0]["hash"], password):
+            if not user or not check_password_hash(user.hash, password):
                 flash("Invalid username or password")
                 return redirect(url_for("auth.login"))
             
             # Clear session after successful auth check
             session.clear()
-            session["user_id"] = user[0]["id"]
+            session["user_id"] = user.id
             return redirect(url_for("main.dashboard"))
         except Exception as e:
             flash("An error occurred during login")
@@ -69,21 +65,31 @@ def register():
             flash("Passwords do not match")
             return redirect(url_for("auth.register"))
 
-        # Hash the password
-        hash_pw = generate_password_hash(password)
+        # Check if user already exists
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            flash("Username already exists")
+            return redirect(url_for("auth.register"))
+        
+        existing_email = User.query.filter_by(email=email).first()
+        if existing_email:
+            flash("Email already exists")
+            return redirect(url_for("auth.register"))
 
-        # Insert into database
+        # Hash the password and create new user
+        hash_pw = generate_password_hash(password)
+        new_user = User(username=username, email=email, hash=hash_pw)
+        
         try:
-            db.execute("INSERT INTO users (username, email, hash) VALUES (?, ?, ?)", 
-                      username, email, hash_pw)
+            db.session.add(new_user)
+            db.session.commit()
         except Exception as e:
-            flash("Username or email already exists")
+            db.session.rollback()
+            flash("Error creating account")
             return redirect(url_for("auth.register"))
 
         # Log in the new user
-        user = db.execute("SELECT id FROM users WHERE username = ?", username)
-        session["user_id"] = user[0]["id"]
-
+        session["user_id"] = new_user.id
         return redirect(url_for("main.dashboard"))
 
     return render_template("register.html", current_year=datetime.now().year)
