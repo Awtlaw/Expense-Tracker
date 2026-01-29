@@ -7,3 +7,5 @@ requests
 python-dotenv
 fpdf2
 email-validator
+gunicorn
+
